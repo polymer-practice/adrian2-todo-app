@@ -1,4 +1,20 @@
-<link rel="import" href="../../bower_components/polymer/polymer-element.html">
+<link rel="import" href="../../bower_components/polymer/polymer-element.html" />
+<link
+  rel="import"
+  href="../../bower_components/adrian2-form-task/adrian2-form-task.html"
+/>
+<link
+  rel="import"
+  href="../../bower_components/adrian2-task-list/adrian2-task-list.html"
+/>
+<link
+  rel="import"
+  href="../../bower_components/console-messages/console-messages.html"
+/>
+<link
+  rel="import"
+  href="../../bower_components/adrian2-task-repository/adrian2-task-repository.html"
+/>
 
 <dom-module id="todo-app">
   <template>
@@ -6,24 +22,288 @@
       :host {
         display: block;
       }
+
+      .zone {
+        margin-bottom: 10px;
+      }
+
+      .list-zone {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .buttons-task {
+        display: flex;
+        justify-content: space-around;
+        align-content: center;
+      }
+
+      .list-task {
+        margin-bottom: 10px;
+      }
+
+      .btn {
+        height: 40px;
+        width: 80px;
+      }
     </style>
-    <h2>Hello [[prop1]]!</h2>
+    <adrian2-task-repository
+      id="taskRepo"
+      offset="0"
+      limit="5"
+    ></adrian2-task-repository>
+    <div class="zone form-zone">
+      <adrian2-form-task
+        id="formTask"
+        task-label="New task"
+        button-text="Save"
+      ></adrian2-form-task>
+    </div>
+    <div class="zone list-zone">
+      <div class="list-task">
+        <adrian2-task-list
+          task-list="[[listOfTask]]"
+          id="listTasks"
+        ></adrian2-task-list>
+      </div>
+      <div class="buttons-task">
+        <button type="button" class="btn btn-first" on-click="goFirstPage">
+          First
+        </button>
+        <button type="button" class="btn btn-prev" on-click="goPrevPage">
+          Prev
+        </button>
+        <select class="btn btn-menu" on-change="changeLimit">
+          <option value="5" selected>5</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+        </select>
+        <button type="button" class="btn btn-next" on-click="goNextPage">
+          Next
+        </button>
+        <button type="button" class="btn btn-last" on-click="goLastPage">
+          Last
+        </button>
+      </div>
+    </div>
+    <div class="zone console-zone">
+      <console-messages>
+        <div id="messages"></div>
+      </console-messages>
+    </div>
   </template>
 
   <script>
-    /**
-     * @customElement
-     * @polymer
-     */
     class TodoApp extends Polymer.Element {
-      static get is() { return 'todo-app'; }
+      static get is() {
+        return "todo-app";
+      }
       static get properties() {
         return {
-          prop1: {
-            type: String,
-            value: 'todo-app'
+          listOfTask: {
+            type: Array,
+            value: []
           }
         };
+      }
+
+      constructor() {
+        super();
+
+        this.page = 0;
+        this.limit = 5;
+        this.maxPage = 0;
+        this.pathNotify = [];
+      }
+
+      connectedCallback() {
+        super.connectedCallback();
+
+        this.$.formTask.addEventListener(
+          "add-task",
+          this.createTask.bind(this)
+        );
+        this.$.taskRepo.addEventListener(
+          "page-event",
+          this.renderPage.bind(this)
+        );
+        this.$.taskRepo.addEventListener(
+          "task-created",
+          this.taskCreated.bind(this)
+        );
+        this.$.taskRepo.addEventListener(
+          "update-task",
+          this.updatePage.bind(this)
+        );
+        this.$.listTasks.addEventListener(
+          "pending-event",
+          this.setPendingTask.bind(this)
+        );
+        this.$.listTasks.addEventListener(
+          "done-event",
+          this.setDoneTask.bind(this)
+        );
+        this.$.listTasks.addEventListener(
+          "cancel-event",
+          this.setCancelTask.bind(this)
+        );
+      }
+
+      disconnectedCallback() {
+        super.disconnectedCallback();
+
+        this.$.formTask.removeEventListener("add-task", this.createTask);
+        this.$.taskRepo.removeEventListener("page-event", this.renderPage);
+        this.$.taskRepo.removeEventListener("task-created", this.taskCreated);
+        this.$.taskRepo.addEventListener("update-task", this.updatePage);
+        this.$.listTasks.addEventListener("pending-event", this.setPendingTask);
+        this.$.listTasks.addEventListener("done-event", this.setDoneTask);
+        this.$.listTasks.addEventListener("cancel-event", this.setCancelTask);
+      }
+
+      writeMessage(msg) {
+        this.$.messages.innerHTML = msg;
+      }
+
+      goFirstPage() {
+        this.writeMessage("Retrieving the first page...");
+        this.$.taskRepo.getPage(0, this.limit);
+      }
+
+      goPrevPage() {
+        this.writeMessage("Retrieving the previus page...");
+        const page = this.page - 1 < 0 ? 0 : this.page - 1;
+        const offset = page * this.limit;
+        this.$.taskRepo.getPage(offset, this.limit);
+      }
+
+      goNextPage() {
+        this.writeMessage("Retrieving the next page...");
+        const page =
+          this.page + 1 > this.maxPage ? this.maxPage : this.page + 1;
+        const offset = page * this.limit;
+        this.$.taskRepo.getPage(offset, this.limit);
+      }
+
+      goLastPage() {
+        this.writeMessage("Retrieving the last page...");
+        const offset = this.maxPage * this.limit;
+        this.$.taskRepo.getPage(offset, this.limit);
+      }
+
+      changeLimit(event) {
+        this.writeMessage("Retrieving the first page...");
+        const limit = event.target.value;
+        this.$.taskRepo.getPage(0, limit);
+      }
+
+      createTask(event) {
+        event.preventDefault();
+        this.writeMessage("Creating a new task...");
+        const newTask = {
+          title: event.detail.nameTask,
+          canceled: false,
+          done: false
+        };
+
+        this.$.taskRepo.newTask = newTask;
+      }
+
+      updatePage() {
+        const offset = this.page * this.limit;
+        this.$.taskRepo.getPage(offset, this.limit);
+      }
+
+      taskCreated() {
+        this.writeMessage("Task created successfully!!");
+
+        if (this.page !== 0) {
+          this.page = 0;
+        }
+
+        this.$.taskRepo.getPage(0, this.limit);
+      }
+
+      setPendingTask(event) {
+        this.writeMessage("Change the state of the task to pending...");
+        let indexPath = 0;
+
+        const id = event.detail.key;
+        const task = this.listOfTask.filter((task, index) => {
+          if (task.id === id) {
+            indexPath = index;
+            return true;
+          } else {
+            return false;
+          }
+        })[0];
+
+        task.done = false;
+        task.canceled = false;
+
+        this.pathNotify.push(`listOfTask.${indexPath}.done`);
+        this.pathNotify.push(`listOfTask.${indexPath}.canceled`);
+        this.$.taskRepo.updateTask = Object.assign({}, { ...task });
+      }
+
+      setDoneTask(event) {
+        this.writeMessage("Change the state of the task to done...");
+        let indexPath = 0;
+
+        const id = event.detail.key;
+        const task = this.listOfTask.filter((task, index) => {
+          if (task.id === id) {
+            indexPath = index;
+            return true;
+          } else {
+            return false;
+          }
+        })[0];
+
+        task.done = true;
+        task.canceled = false;
+
+        this.pathNotify.push(`listOfTask.${indexPath}.done`);
+        this.pathNotify.push(`listOfTask.${indexPath}.canceled`);
+
+        this.$.taskRepo.updateTask = Object.assign({}, { ...task });
+      }
+
+      setCancelTask(event) {
+        this.writeMessage("Change the state of the task to cancel...");
+        let indexPath = 0;
+
+        const id = event.detail.key;
+        const task = this.listOfTask.filter((task, index) => {
+          if (task.id === id) {
+            indexPath = index;
+            return true;
+          } else {
+            return false;
+          }
+        })[0];
+
+        task.done = false;
+        task.canceled = true;
+
+        this.pathNotify.push(`listOfTask.${indexPath}.done`);
+        this.pathNotify.push(`listOfTask.${indexPath}.canceled`);
+
+        this.$.taskRepo.updateTask = Object.assign({}, { ...task });
+      }
+
+      renderPage(event) {
+        this.writeMessage("List of task obtained!!!");
+        const pageDetails = event.detail;
+
+        this.page = Math.ceil(pageDetails.offset / pageDetails.limit);
+        this.limit = pageDetails.limit;
+        this.maxPage = Math.ceil(pageDetails.total / pageDetails.limit) - 1;
+
+        this.set("listOfTask", pageDetails.page);
+        while (this.pathNotify.length > 0) {
+          this.notifyPath(this.pathNotify.shift());
+        }
       }
     }
 
